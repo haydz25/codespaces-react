@@ -135,17 +135,36 @@ export default function App() {
       console.error("Error sending order:", error);
       alert("Something went wrong sending your order. Please try again.");
       setOrderStatus("idle");
-    } else {
-      setOrderStatus("success");
-      setCart([]);
-      setEmployeeName("");
-      setSuggestion(""); 
+      return; // Added an early return to prevent Slack from firing if DB fails
+    } 
+
+    // --- SLACK NOTIFICATION TRIGGER ---
+    try {
+      const orderSummary = cart.map(item => `${item.quantity}x ${item.name}`).join(', ');
       
-      setTimeout(() => {
-        setOrderStatus("idle");
-        setCurrentView("menu"); 
-      }, 4000);
+      await fetch("/.netlify/functions/notifySlack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: employeeName,
+          order: orderSummary,
+          total: cartTotal.toFixed(2),
+          notes: suggestion || "None"
+        })
+      });
+    } catch (functionError) {
+      console.error("Slack alert failed, but order was successfully saved to DB.", functionError);
     }
+
+    setOrderStatus("success");
+    setCart([]);
+    setEmployeeName("");
+    setSuggestion(""); 
+    
+    setTimeout(() => {
+      setOrderStatus("idle");
+      setCurrentView("menu"); 
+    }, 4000);
   };
 
   // --- Admin Logic ---
