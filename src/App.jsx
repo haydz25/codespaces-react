@@ -8,26 +8,12 @@
 import React, { useState, useEffect } from "react";
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase (Using Environment Variables for Security)
+// Initialize Supabase
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://dcgkamyafyzbzijaigmb.supabase.co';
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable__VhMXogOmnQoj9z_NTc0zQ_UvWG3D1k';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// --- The Secret Passcode ---
 const ADMIN_PASSCODE = "HubPub";
-
-// --- HubPub Menu Data ---
-const menuItems = [
-  { id: 1, category: "Pub Favourites", name: "Mini Pizza", price: 3.0, description: "Available as Pepperoni & Cheese 🍕", image: "https://lh5.ggpht.com/_zTCbpIKK2Ss/TEyPgPmc90I/AAAAAAAAAtk/-hBH5yjmIc0/s800/minipizzas.jpg" },
-  { id: 2, category: "Pub Favourites", name: "Spicy Jamaican Patty", price: 2.0, description: "Flaky Crust, Classic Beef Filling! 🥟", image: "https://www.orchidsandsweettea.com/wp-content/uploads/2022/03/Spicy-Jamaican-Beef-Patties.jpg" },
-  { id: 3, category: "Pub Favourites", name: "Chicken Quesadillas", price: 3.0, description: "Shredded Chicken & Cheese inside Toasty Tortillas 🌮", image: "https://www.julieseatsandtreats.com/wp-content/uploads/2024/10/Chicken-Quesadilla-Square.jpg" },
-  { id: 4, category: "Desserts", name: "KitKat Ice Cream Bars", price: 2.0, description: "Creamy Ice Cream with Crunchy Wafers! 🍫", image: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ23viitC4nKSeqUu2eNraLShkWKauxSohc-znByhuxR8nev3b90ZMxNq8&s=10" },
-  { id: 5, category: "Desserts", name: "Classic Ice Cream Sandwich", price: 1.5, description: "The Perfect Cool Treat! 🍦", image: "https://i0.wp.com/media.globalnews.ca/videostatic/203/803/Ice_cream_sandwiches_recalled_over_risk_-5d348d5d14a4d60001c10e1d_1_Jul_21_2019_16_54_26_poster.jpg?w=1040&quality=70&strip=all" },
-  { id: 6, category: "Desserts", name: "The Original Chipwich", price: 3.5, description: "Gooey Cookies & Creamy Ice Cream! 🍪", image: "https://upload.wikimedia.org/wikipedia/commons/2/2d/Chipwich_ice_cream_sandwich.jpg" },
-  { id: 7, category: "Drinks", name: "Coke (Can)", price: 1.0, description: "Ice cold refreshing Coke 🥤", image: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTF-JIZwiq1T4eZa3UpbpixkVMm34aXYj3QeSaRdRokOxWyzQsfWWmamUP4&s=10" },
-  { id: 8, category: "Drinks", name: "Crush or Root Beer", price: 1.0, description: "Orange Crush or Root Beer 🍊", image: "https://valleydirectfoods.com/cdn/shop/products/crush-variety-24-pack-725608.jpg?v=1699684021" },
-  { id: 9, category: "Drinks", name: "Gatorade (Bottle)", price: 1.5, description: "Electrolyte packed ⚡", image: "https://pepsihomedelivery.com/wp-content/uploads/2020/04/gat-min-lin-600x600.jpeg" }
-];
 
 // --- Floating Background Component ---
 const FloatingBackground = () => {
@@ -69,6 +55,7 @@ const FloatingBackground = () => {
 
 export default function App() {
   const [currentView, setCurrentView] = useState("menu"); 
+  const [menuItems, setMenuItems] = useState([]);
   
   const [cart, setCart] = useState([]);
   const [employeeName, setEmployeeName] = useState("");
@@ -79,19 +66,44 @@ export default function App() {
   const [isFetchingAdmin, setIsFetchingAdmin] = useState(false);
   const [adminInput, setAdminInput] = useState("");
   const [loginError, setLoginError] = useState(false);
+  
+  // NEW: State for Modals
+  const [orderToCancel, setOrderToCancel] = useState(null);
+  const [alertInfo, setAlertInfo] = useState(null); // Tracks general warnings/errors
 
-  // --- Developer Console Easter Egg ---
   useEffect(() => {
     console.info(
       "%cDeveloped by Haydz\n%cRights reserved to Haydyn Barreto", 
       "color: #e76f51; font-weight: bold; font-size: 24px; padding: 10px 0;",
       "color: #333; font-size: 14px; font-style: italic;"
     );
+    fetchMenu(); 
   }, []);
 
-  // --- Cart Logic ---
+  const fetchMenu = async () => {
+    const { data, error } = await supabase
+      .from('menu_inventory')
+      .select('*')
+      .order('id', { ascending: true });
+    
+    if (data) setMenuItems(data);
+    if (error) console.error("Error fetching menu:", error);
+  };
+
   const addToCart = (item) => {
     const existing = cart.find((c) => c.id === item.id);
+    const currentQuantity = existing ? existing.quantity : 0;
+    
+    if (currentQuantity >= item.stock_count) {
+      // Replaced native alert with custom modal
+      setAlertInfo({
+        title: "Stock Limit Reached",
+        message: `Whoops! We only have ${item.stock_count} ${item.name}(s) left!`,
+        type: "warning"
+      });
+      return;
+    }
+
     if (existing) {
       setCart(cart.map((c) => (c.id === item.id ? { ...c, quantity: c.quantity + 1 } : c)));
     } else {
@@ -112,7 +124,6 @@ export default function App() {
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  // --- Submission Logic ---
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (cart.length === 0) return;
@@ -133,15 +144,27 @@ export default function App() {
 
     if (error) {
       console.error("Error sending order:", error);
-      alert("Something went wrong sending your order. Please try again.");
+      // Replaced native alert with custom modal
+      setAlertInfo({
+        title: "Order Failed",
+        message: "Something went wrong sending your order. Please try again.",
+        type: "error"
+      });
       setOrderStatus("idle");
-      return; // Added an early return to prevent Slack from firing if DB fails
+      return; 
     } 
 
-    // --- SLACK NOTIFICATION TRIGGER ---
+    for (const item of cart) {
+      await supabase
+        .from('menu_inventory')
+        .update({ stock_count: item.stock_count - item.quantity })
+        .eq('id', item.id);
+    }
+    
+    fetchMenu(); 
+
     try {
       const orderSummary = cart.map(item => `${item.quantity}x ${item.name}`).join(', ');
-      
       await fetch("/.netlify/functions/notifySlack", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -153,7 +176,7 @@ export default function App() {
         })
       });
     } catch (functionError) {
-      console.error("Slack alert failed, but order was successfully saved to DB.", functionError);
+      console.error("Slack alert failed, but order was saved.", functionError);
     }
 
     setOrderStatus("success");
@@ -167,7 +190,6 @@ export default function App() {
     }, 4000);
   };
 
-  // --- Admin Logic ---
   const handleLogin = (e) => {
     e.preventDefault();
     if (adminInput === ADMIN_PASSCODE) {
@@ -193,18 +215,61 @@ export default function App() {
   };
 
   const markOrderComplete = async (orderId) => {
-    await supabase
-      .from('orders')
-      .update({ status: 'Complete' })
-      .eq('id', orderId);
-    
+    await supabase.from('orders').update({ status: 'Complete' }).eq('id', orderId);
     fetchOrders(); 
   };
 
-  useEffect(() => {
-    if (currentView === "admin") {
-      fetchOrders();
+  const confirmCancelOrder = async () => {
+    if (!orderToCancel) return;
+    const order = orderToCancel;
+
+    try {
+      const { error: cancelError } = await supabase
+        .from('orders')
+        .update({ status: 'Cancelled' })
+        .eq('id', order.id);
+        
+      if (cancelError) throw cancelError;
+
+      const cartItems = typeof order.cart_items === 'string' 
+        ? JSON.parse(order.cart_items) 
+        : order.cart_items;
+
+      for (const item of cartItems) {
+        const { data: dbItem, error: fetchError } = await supabase
+          .from('menu_inventory')
+          .select('stock_count')
+          .eq('id', item.id)
+          .single();
+
+        if (fetchError) throw fetchError;
+
+        const { error: updateError } = await supabase
+          .from('menu_inventory')
+          .update({ stock_count: dbItem.stock_count + item.quantity })
+          .eq('id', item.id);
+
+        if (updateError) throw updateError;
+      }
+
+      setOrderToCancel(null);
+      fetchOrders(); 
+      fetchMenu(); 
+      
+    } catch (err) {
+      console.error("🚨 CRITICAL ERROR CANCELLING ORDER:", err);
+      // Replaced native alert with custom modal
+      setAlertInfo({
+        title: "Cancellation Blocked",
+        message: "Something blocked the cancellation. Check the developer console for details!",
+        type: "error"
+      });
+      setOrderToCancel(null);
     }
+  };
+
+  useEffect(() => {
+    if (currentView === "admin") fetchOrders();
   }, [currentView]);
 
   // --- UI Styles ---
@@ -232,35 +297,69 @@ export default function App() {
     adminCard: { backgroundColor: "#fff", borderLeft: "5px solid #e76f51", padding: "20px", marginBottom: "15px", borderRadius: "6px", boxShadow: "0 2px 5px rgba(0,0,0,0.1)" },
     refreshButton: { backgroundColor: "#2b1c15", color: "white", border: "none", padding: "10px 20px", borderRadius: "6px", cursor: "pointer", fontWeight: "bold", float: "right" },
     adminLink: { textAlign: "center", marginTop: "30px", fontSize: "0.85rem", color: "#e76f51", fontWeight: "bold", cursor: "pointer", textDecoration: "underline" },
-    footer: { textAlign: "center", marginTop: "40px", paddingTop: "20px", borderTop: "1px solid #eee", fontSize: "0.8rem", color: "#aaa" }
+    footer: { textAlign: "center", marginTop: "40px", paddingTop: "20px", borderTop: "1px solid #eee", fontSize: "0.8rem", color: "#aaa" },
+    modalOverlay: { position: "fixed", top: 0, left: 0, width: "100%", height: "100%", backgroundColor: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", justifyContent: "center", alignItems: "center", backdropFilter: "blur(4px)" },
+    modalCard: { backgroundColor: "#fff", padding: "30px", borderRadius: "12px", maxWidth: "400px", width: "90%", textAlign: "center", boxShadow: "0 10px 30px rgba(0,0,0,0.2)" }
   };
 
   const renderCategory = (categoryName) => {
     const items = menuItems.filter(item => item.category === categoryName);
+    if (items.length === 0) return null; 
+    
     return (
       <div key={categoryName}>
         <h2 style={styles.sectionTitle}>{categoryName}</h2>
         <div style={styles.grid}>
-          {items.map((item) => (
-            <div key={item.id} style={styles.card} onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.03)'} onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
-              <div>
-                <img src={item.image} alt={item.name} style={styles.cardImage} />
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <h3 style={{ margin: "0 0 8px 0", color: "#333" }}>{item.name}</h3>
-                  <span style={styles.priceBadge}>${item.price.toFixed(2)}</span>
-                </div>
-                <p style={{ margin: "0 0 15px 0", color: "#666", fontSize: "0.9rem", lineHeight: "1.4" }}>{item.description}</p>
-              </div>
-              <button 
-                style={styles.button} 
-                onClick={() => addToCart(item)}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#e76f51"}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f4a261"}
+          {items.map((item) => {
+            const isSoldOut = item.stock_count <= 0;
+
+            return (
+              <div 
+                key={item.id} 
+                style={{ ...styles.card, opacity: isSoldOut ? 0.6 : 1, transform: 'scale(1)' }} 
+                onMouseEnter={(e) => { if (!isSoldOut) e.currentTarget.style.transform = 'scale(1.03)' }} 
+                onMouseLeave={(e) => { if (!isSoldOut) e.currentTarget.style.transform = 'scale(1)' }}
               >
-                + Add to Cart
-              </button>
-            </div>
-          ))}
+                <div>
+                  <div style={{ position: "relative" }}>
+                    <img 
+                      src={item.image} 
+                      alt={item.name} 
+                      style={{ ...styles.cardImage, filter: isSoldOut ? "grayscale(100%)" : "none" }} 
+                    />
+                    {isSoldOut && (
+                      <div style={{ position: "absolute", top: "40%", left: "50%", transform: "translate(-50%, -50%) rotate(-10deg)", backgroundColor: "rgba(200, 30, 30, 0.8)", color: "white", padding: "5px 15px", borderRadius: "4px", fontWeight: "bold", fontSize: "1.2rem", border: "2px solid white" }}>
+                        SOLD OUT
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <h3 style={{ margin: "0 0 8px 0", color: "#333" }}>{item.name}</h3>
+                    <span style={{...styles.priceBadge, backgroundColor: isSoldOut ? "#999" : "#e76f51"}}>
+                      ${Number(item.price).toFixed(2)}
+                    </span>
+                  </div>
+                  <p style={{ margin: "0 0 15px 0", color: "#666", fontSize: "0.9rem", lineHeight: "1.4" }}>{item.description}</p>
+                </div>
+                
+                {isSoldOut ? (
+                  <button style={{ ...styles.button, backgroundColor: "#e0e0e0", color: "#888", cursor: "not-allowed" }} disabled>
+                    Sold Out
+                  </button>
+                ) : (
+                  <button 
+                    style={styles.button} 
+                    onClick={() => addToCart(item)}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#e76f51"}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#f4a261"}
+                  >
+                    + Add to Cart
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -270,6 +369,57 @@ export default function App() {
     <div style={styles.appBackground}>
       {currentView !== "admin" && <FloatingBackground />}
       
+      {/* --- CANCELLATION MODAL --- */}
+      {orderToCancel && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard}>
+            <div style={{ fontSize: "3rem", margin: "0 0 10px 0" }}>⚠️</div>
+            <h2 style={{ color: "#e63946", margin: "0 0 10px 0" }}>Cancel Order?</h2>
+            <p style={{ color: "#555", fontSize: "1.1rem", lineHeight: "1.5" }}>
+              Are you sure you want to completely cancel the order for <strong>{orderToCancel.employee_name}</strong> and restock their items?
+            </p>
+            
+            <div style={{ display: "flex", gap: "10px", marginTop: "25px" }}>
+              <button 
+                style={{ ...styles.button, flex: 1, backgroundColor: "#e0e0e0", color: "#333", marginTop: 0 }} 
+                onClick={() => setOrderToCancel(null)}
+              >
+                No, Keep It
+              </button>
+              <button 
+                style={{ ...styles.button, flex: 1, backgroundColor: "#e63946", color: "white", marginTop: 0 }} 
+                onClick={confirmCancelOrder}
+              >
+                Yes, Restock
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- NEW: GLOBAL ALERT MODAL --- */}
+      {alertInfo && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard}>
+            <div style={{ fontSize: "3rem", margin: "0 0 10px 0" }}>
+              {alertInfo.type === 'error' ? '🚨' : '⚠️'}
+            </div>
+            <h2 style={{ color: alertInfo.type === 'error' ? '#e63946' : '#e76f51', margin: "0 0 10px 0" }}>
+              {alertInfo.title}
+            </h2>
+            <p style={{ color: "#555", fontSize: "1.1rem", lineHeight: "1.5" }}>
+              {alertInfo.message}
+            </p>
+            <button 
+              style={{ ...styles.button, width: "100%", backgroundColor: "#333", color: "white", marginTop: "25px" }} 
+              onClick={() => setAlertInfo(null)}
+            >
+              Okay, got it
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={styles.container}>
         
         {(currentView === "menu" || currentView === "checkout") && (
@@ -280,29 +430,26 @@ export default function App() {
           </header>
         )}
 
-        {/* --- VIEW 1: THE MENU --- */}
-        {currentView === "menu" && (
+        {currentView === "menu" && menuItems.length === 0 && (
+          <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
+            <h3>Loading Menu... 🍽️</h3>
+          </div>
+        )}
+
+        {currentView === "menu" && menuItems.length > 0 && (
           <div>
             {renderCategory("Pub Favourites")}
             {renderCategory("Desserts")}
             {renderCategory("Drinks")}
-            
-            <div style={styles.adminLink} onClick={() => setCurrentView("admin_login")}>
-              Staff Access
-            </div>
+            <div style={styles.adminLink} onClick={() => setCurrentView("admin_login")}>Staff Access</div>
           </div>
         )}
 
-        {/* --- VIEW 2: THE CHECKOUT PAGE --- */}
         {currentView === "checkout" && (
           <div>
-            <button style={styles.backButton} onClick={() => setCurrentView("menu")}>
-              ← Back to Menu
-            </button>
-            
+            <button style={styles.backButton} onClick={() => setCurrentView("menu")}>← Back to Menu</button>
             <div style={styles.cartSection}>
               <h2 style={{ margin: "0 0 20px 0", color: "#e76f51" }}>🛒 Your Order Ticket</h2>
-              
               <div>
                 {cart.map((item) => (
                   <div key={item.id} style={styles.cartItem}>
@@ -324,39 +471,14 @@ export default function App() {
               </div>
 
               <form onSubmit={handleSubmit} style={{ marginTop: "30px" }}>
-                <input
-                  style={styles.input}
-                  type="text"
-                  placeholder="Your Full Name"
-                  value={employeeName}
-                  onChange={(e) => setEmployeeName(e.target.value)}
-                  required
-                />
-                <textarea
-                  style={styles.textArea}
-                  placeholder="Any menu suggestions for next time? (Optional)"
-                  value={suggestion}
-                  onChange={(e) => setSuggestion(e.target.value)}
-                />
-                
+                <input style={styles.input} type="text" placeholder="Your Full Name" value={employeeName} onChange={(e) => setEmployeeName(e.target.value)} required />
+                <textarea style={styles.textArea} placeholder="Any menu suggestions for next time? (Optional)" value={suggestion} onChange={(e) => setSuggestion(e.target.value)} />
                 {orderStatus === "success" && (
                   <div style={{ backgroundColor: "#d4edda", color: "#155724", padding: "15px", borderRadius: "6px", margin: "15px 0", border: "1px solid #c3e6cb", fontWeight: "bold", textAlign: "center" }}>
                     🎉 Order fired to the kitchen! We'll come find you for payment shortly.
                   </div>
                 )}
-
-                <button 
-                  type="submit" 
-                  style={{ 
-                    ...styles.button, 
-                    width: "100%", 
-                    backgroundColor: "#e76f51",
-                    color: "white",
-                    fontSize: "1.2rem",
-                    padding: "15px"
-                  }}
-                  disabled={orderStatus === "submitting"}
-                >
+                <button type="submit" style={{ ...styles.button, width: "100%", backgroundColor: "#e76f51", color: "white", fontSize: "1.2rem", padding: "15px" }} disabled={orderStatus === "submitting"}>
                   {orderStatus === "submitting" ? "Sending Order..." : "Place Order"}
                 </button>
               </form>
@@ -364,44 +486,26 @@ export default function App() {
           </div>
         )}
 
-        {/* --- VIEW 3: ADMIN LOGIN --- */}
         {currentView === "admin_login" && (
           <div>
-            <button style={styles.backButton} onClick={() => { setCurrentView("menu"); setLoginError(false); setAdminInput(""); }}>
-              ← Back to Menu
-            </button>
+            <button style={styles.backButton} onClick={() => { setCurrentView("menu"); setLoginError(false); setAdminInput(""); }}>← Back to Menu</button>
             <div style={{...styles.cartSection, maxWidth: "400px", margin: "0 auto", marginTop: "50px"}}>
               <h2 style={{ margin: "0 0 20px 0", color: "#e76f51", textAlign: "center" }}>🔒 Staff Login</h2>
               <form onSubmit={handleLogin}>
-                <input 
-                  type="password" 
-                  style={styles.input} 
-                  placeholder="Enter Passcode" 
-                  value={adminInput}
-                  onChange={(e) => setAdminInput(e.target.value)}
-                  required
-                />
+                <input type="password" style={styles.input} placeholder="Enter Passcode" value={adminInput} onChange={(e) => setAdminInput(e.target.value)} required />
                 {loginError && <p style={{ color: "red", textAlign: "center", margin: "5px 0" }}>Incorrect passcode.</p>}
-                <button 
-                  type="submit" 
-                  style={{ ...styles.button, width: "100%", backgroundColor: "#2b1c15", color: "white", marginTop: "20px" }}
-                >
-                  Access Kitchen Display
-                </button>
+                <button type="submit" style={{ ...styles.button, width: "100%", backgroundColor: "#2b1c15", color: "white", marginTop: "20px" }}>Access Kitchen Display</button>
               </form>
             </div>
           </div>
         )}
 
-        {/* --- VIEW 4: THE ADMIN PANEL --- */}
         {currentView === "admin" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #eee", paddingBottom: "20px", marginBottom: "20px" }}>
               <button style={styles.backButton} onClick={() => setCurrentView("menu")}>← Exit Staff Mode</button>
               <h2 style={{ margin: 0, color: "#2b1c15" }}>Kitchen Display</h2>
-              <button style={styles.refreshButton} onClick={fetchOrders}>
-                {isFetchingAdmin ? "Refreshing..." : "↻ Refresh Queue"}
-              </button>
+              <button style={styles.refreshButton} onClick={fetchOrders}>{isFetchingAdmin ? "Refreshing..." : "↻ Refresh Queue"}</button>
             </div>
 
             {activeOrders.length === 0 ? (
@@ -416,41 +520,39 @@ export default function App() {
                     <h3 style={{ margin: "0 0 10px 0", color: "#e76f51", fontSize: "1.5rem" }}>{order.employee_name}</h3>
                     <h3 style={{ margin: 0, color: "#333" }}>${order.total_price}</h3>
                   </div>
-                  
                   <ul style={{ paddingLeft: "20px", margin: "10px 0", fontSize: "1.1rem" }}>
                     {order.cart_items.map((item, index) => (
-                      <li key={index} style={{ marginBottom: "5px" }}>
-                        <strong>{item.quantity}x</strong> {item.name}
-                      </li>
+                      <li key={index} style={{ marginBottom: "5px" }}><strong>{item.quantity}x</strong> {item.name}</li>
                     ))}
                   </ul>
-
                   {order.suggestion && (
                     <div style={{ backgroundColor: "#f4f1de", padding: "10px", borderRadius: "4px", fontSize: "0.9rem", color: "#555", marginBottom: "15px" }}>
                       <strong>Note:</strong> {order.suggestion}
                     </div>
                   )}
-
-                  <button 
-                    style={{ ...styles.button, width: "100%", backgroundColor: "#2a9d8f", color: "white" }} 
-                    onClick={() => markOrderComplete(order.id)}
-                  >
-                    ✓ Mark as Complete & Paid
-                  </button>
+                  
+                  <div style={{ display: "flex", gap: "10px", marginTop: "15px" }}>
+                    <button 
+                      style={{ ...styles.button, flex: 1, marginTop: 0, backgroundColor: "#e63946", color: "white" }} 
+                      onClick={() => setOrderToCancel(order)} 
+                    >
+                      ✕ Cancel & Restock
+                    </button>
+                    <button style={{ ...styles.button, flex: 1, marginTop: 0, backgroundColor: "#2a9d8f", color: "white" }} onClick={() => markOrderComplete(order.id)}>
+                      ✓ Complete & Paid
+                    </button>
+                  </div>
                 </div>
               ))
             )}
           </div>
         )}
 
-        {/* --- DEVELOPER FOOTER --- */}
         <div style={styles.footer}>
           <p style={{ margin: "0 0 4px 0" }}>Developed by <strong>Haydyn Barreto</strong></p>
         </div>
-
       </div>
 
-      {/* --- STICKY BOTTOM CHECKOUT BAR --- */}
       {currentView === "menu" && cart.length > 0 && (
         <div style={styles.floatingCartBar}>
           <button style={styles.floatingCartButton} onClick={() => setCurrentView("checkout")}>
@@ -458,7 +560,6 @@ export default function App() {
           </button>
         </div>
       )}
-
     </div>
   );
 }
